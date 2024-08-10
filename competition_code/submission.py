@@ -72,7 +72,8 @@ class RoarCompetitionSolution:
         self.section_indeces = []
         self.num_ticks = 0
         self.section_start_ticks = 0
-        self.current_section = -1
+        self.current_section = 0
+        self.newwaypoints = {}
 
     async def initialize(self) -> None:
         num_sections = 12
@@ -230,6 +231,10 @@ class RoarCompetitionSolution:
                 self.section_start_ticks = self.num_ticks
                 self.current_section = i
                 print(f"Section {i}: {elapsed_ticks}")
+                # if current section is 12, 1 lap is complete.  Replace maneuverable way points
+                if self.current_section == 12:
+                    self.merge_new_waypoint()
+                    self.newwaypoints.clear()
 
         new_waypoint_index = self.get_lookahead_index(current_speed_kmh)
         waypoint_to_follow = self.next_waypoint_smooth(current_speed_kmh)
@@ -264,6 +269,66 @@ class RoarCompetitionSolution:
 
         await self.vehicle.apply_action(control)
         return control
+
+    # add new waypoint to temp list
+    def add_new_waypoint(self, section, index, waypoint):    
+        if self.skipSection(section):
+            return 
+        if section < 0:
+            section = 0
+        if(section not in self.newwaypoints):
+            self.newwaypoints.update({section: {}})
+        if index in self.newwaypoints[section]:
+            self.newwaypoints[section][index] = waypoint
+        else:
+            self.newwaypoints[section].update({index: waypoint})
+
+    def skipSection(self, section):
+        if section == 0:
+            return False
+        elif section == 1:
+            return True
+        elif section == 2:
+            return False
+        elif section == 3:
+            return True
+        elif section == 4:
+            return True
+        elif section == 5:
+            return False
+        elif section == 6:
+            return True
+        elif section == 7:
+            return False
+        elif section == 8:
+            return True
+        elif section == 9:
+            return False
+        elif section == 10:
+            return False
+        elif section == 11:
+            return True
+        elif section == 12:
+            return True
+        
+    # Merge new waypoints and update indeces
+    def merge_new_waypoint(self):
+        print("self.section_indeces", self.section_indeces)
+        for sectionIndex in range(12, -1, -1):
+            # print("Merge Section ", sectionIndex)
+            # print("self.section_indeces: ", self.section_indeces)
+            if(sectionIndex not in self.newwaypoints.keys()):
+                continue
+            print("merge_new_waypoint ", sectionIndex)
+            newSectionWayPointsCount = len(self.newwaypoints[sectionIndex].keys())
+            # print("newSectionWayPointsCount", newSectionWayPointsCount)
+            sorted_section_points =reversed(sorted(self.newwaypoints[sectionIndex].items()))
+            for insertIndex, newWayPoint in sorted_section_points:
+                self.maneuverable_waypoints.insert(insertIndex, newWayPoint)
+            for updateIndeces in range(sectionIndex, 13):
+                self.section_indeces[updateIndeces]+=newSectionWayPointsCount
+        print("self.section_indeces", self.section_indeces)
+        print("end merge_new_waypoint ", len(self.maneuverable_waypoints))
 
     def get_lookahead_value(self, speed):
         speed_to_lookahead_dict = {
@@ -421,7 +486,7 @@ class RoarCompetitionSolution:
             #       + " new_loc: " + str(new_location) + " shift:" + str(shift_distance)
             #       + " num_points: " + str(num_points) + " start_ind:" + str(start_index_for_avg)
             #       + " curr_speed: " + str(current_speed))
-
+            self.add_new_waypoint(self.current_section, start_index_for_avg + int(num_points/2), target_waypoint)
         else:
             target_waypoint =  self.maneuverable_waypoints[next_waypoint_index]
 
